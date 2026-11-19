@@ -5,7 +5,8 @@ from tkinter import messagebox, ttk
 import sv_ttk
 
 from logic import (calculate, format_money, load_materials, load_products,
-                   parse_number, save_materials, save_products)
+                   parse_number, save_materials, save_products,
+                   unit_price, format_unit_money, yield_units)
 
 UNITS = ["un", "m", "cm", "g", "kg", "ml", "L", "folha", "pacote", "rolo"]
 
@@ -83,7 +84,7 @@ class App(tk.Tk):
         self.name = ttk.Entry(left)
         self.name.grid(row=1, column=0, sticky="ew", pady=(4, 14))
 
-        ttk.Label(left, text="Materiais usados", style="Section.TLabel").grid(row=2, column=0, sticky="w")
+        ttk.Label(left, text="Materiais usados em 1 unidade", style="Section.TLabel").grid(row=2, column=0, sticky="w")
         pick = ttk.Frame(left)
         pick.grid(row=3, column=0, sticky="ew", pady=(4, 6))
         pick.columnconfigure(0, weight=1)
@@ -97,8 +98,8 @@ class App(tk.Tk):
         self.mat_unit = ttk.Label(left, text="Escolha o material e a quantidade usada", style="Hint.TLabel")
         self.mat_unit.grid(row=4, column=0, sticky="w")
 
-        self.mat_list = ttk.Treeview(left, columns=("mat", "qtd", "custo"), show="headings", height=3)
-        for c, t, w, an in (("mat", "Material", 220, "w"), ("qtd", "Quantidade", 110, "w"), ("custo", "Custo", 110, "e")):
+        self.mat_list = ttk.Treeview(left, columns=("mat", "qtd", "rende", "custo"), show="headings", height=3)
+        for c, t, w, an in (("mat", "Material", 170, "w"), ("qtd", "Usado", 80, "w"), ("rende", "Embalagem rende", 140, "w"), ("custo", "Custo", 90, "e")):
             self.mat_list.heading(c, text=t, anchor=an)
             self.mat_list.column(c, width=w, anchor=an)
         self.mat_list.grid(row=5, column=0, sticky="ew", pady=6)
@@ -108,19 +109,19 @@ class App(tk.Tk):
         grid = ttk.Frame(left)
         grid.grid(row=8, column=0, sticky="ew")
         grid.columnconfigure((0, 1, 2), weight=1, uniform="g")
-        self.hours = self._field(grid, 0, 0, "Horas de trabalho", "0")
+        self.minutes = self._field(grid, 0, 0, "Minutos de trabalho (1 un.)", "0")
         self.rate = self._field(grid, 0, 1, "Valor da hora (R$)", "0")
-        self.qty = self._field(grid, 0, 2, "Unidades produzidas", "1")
+        self.qty = self._field(grid, 0, 2, "Qtd. do pedido", "1")
         self.extra = self._field(grid, 2, 0, "Custos extras (%)", "0")
         self.margin = self._field(grid, 2, 1, "Lucro desejado (%)", "50")
-        ttk.Label(grid, text="Extras: embalagem, taxas, etc.", style="Hint.TLabel", wraplength=150).grid(
+        ttk.Label(grid, text="Extras: embalagem, taxas. Tudo é por 1 unidade.", style="Hint.TLabel", wraplength=150).grid(
             row=2, column=2, sticky="w", pady=(0, 10))
 
         # ----- cartão de resultado -----
         right = ttk.LabelFrame(f, text=" Resultado ", padding=18)
         right.grid(row=0, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
-        ttk.Label(right, text="Preço de venda (cada)", style="Hint.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(right, text="Preço de venda de 1 unidade", style="Hint.TLabel").grid(row=0, column=0, sticky="w")
         self.result = ttk.Label(right, text="R$ 0,00", style="Price.TLabel")
         self.result.grid(row=1, column=0, sticky="w", pady=(0, 14))
         self.detail = ttk.Label(right, text="Preencha os dados e clique em Calcular.", justify="left")
@@ -146,23 +147,37 @@ class App(tk.Tk):
         ttk.Label(form, text="Cadastrar / atualizar material", style="Section.TLabel").grid(
             row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
         ttk.Label(form, text="Nome").grid(row=1, column=0, sticky="w")
-        ttk.Label(form, text="Unidade de compra").grid(row=1, column=1, sticky="w")
-        ttk.Label(form, text="Preço por unidade (R$)").grid(row=1, column=2, sticky="w")
-        self.cat_name = ttk.Entry(form, width=32)
+        ttk.Label(form, text="Unidade de medida").grid(row=1, column=1, sticky="w")
+        ttk.Label(form, text="Preço pago (R$)").grid(row=1, column=2, sticky="w")
+        ttk.Label(form, text="Quantidade na embalagem").grid(row=1, column=3, sticky="w")
+        self.cat_name = ttk.Entry(form, width=30)
         self.cat_name.grid(row=2, column=0, sticky="w", padx=(0, 10), pady=(2, 0))
         self.cat_unit = ttk.Combobox(form, values=UNITS, width=10)
         self.cat_unit.set("un")
         self.cat_unit.grid(row=2, column=1, sticky="w", padx=(0, 10), pady=(2, 0))
-        self.cat_price = ttk.Entry(form, width=16)
+        self.cat_price = ttk.Entry(form, width=14)
         self.cat_price.grid(row=2, column=2, sticky="w", padx=(0, 10), pady=(2, 0))
-        ttk.Button(form, text="Salvar material", style="Accent.TButton", command=self.save_catalog_item).grid(
-            row=2, column=3, padx=(0, 8))
-        ttk.Button(form, text="Limpar", command=self._clear_catalog_form).grid(row=2, column=4)
-        ttk.Label(form, text="Exemplo: fita a R$ 3,00 o metro → unidade m, preço 3,00",
-                  style="Hint.TLabel").grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        self.cat_pack = ttk.Entry(form, width=14)
+        self.cat_pack.insert(0, "1")
+        self.cat_pack.grid(row=2, column=3, sticky="w", padx=(0, 10), pady=(2, 0))
+        for e in (self.cat_price, self.cat_pack):
+            e.bind("<KeyRelease>", lambda ev: self._update_cat_preview())
+        self.cat_unit.bind("<<ComboboxSelected>>", lambda ev: self._update_cat_preview())
+        self.cat_unit.bind("<KeyRelease>", lambda ev: self._update_cat_preview())
 
-        self.cat_tree = ttk.Treeview(f, columns=("nome", "unidade", "preco"), show="headings")
-        for c, t, w in (("nome", "Material", 340), ("unidade", "Unidade", 100), ("preco", "Preço por unidade", 160)):
+        self.cat_preview = ttk.Label(form, text="", style="Section.TLabel", foreground="#0a7a3a")
+        self.cat_preview.grid(row=3, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        ttk.Label(form, text="Exemplo: rolo de 50 m que custou R$ 100,00 → unidade m, preço pago 100, "
+                  "quantidade 50. O programa calcula R$ 2,00 por metro.",
+                  style="Hint.TLabel").grid(row=4, column=0, columnspan=4, sticky="w", pady=(2, 8))
+        row = ttk.Frame(form)
+        row.grid(row=5, column=0, columnspan=4, sticky="w")
+        ttk.Button(row, text="Salvar material", style="Accent.TButton", command=self.save_catalog_item).pack(
+            side="left", padx=(0, 8))
+        ttk.Button(row, text="Limpar", command=self._clear_catalog_form).pack(side="left")
+
+        self.cat_tree = ttk.Treeview(f, columns=("nome", "compra", "preco"), show="headings")
+        for c, t, w in (("nome", "Material", 300), ("compra", "Compra", 260), ("preco", "Custo por unidade", 200)):
             self.cat_tree.heading(c, text=t)
             self.cat_tree.column(c, width=w)
         self.cat_tree.pack(fill="both", expand=True, pady=14)
@@ -182,19 +197,36 @@ class App(tk.Tk):
         ttk.Button(row, text="Excluir", command=self.delete_selected).pack(side="left")
 
     # ---------- catálogo de materiais ----------
+    def _read_catalog_form(self):
+        """Retorna (pago, qtd_embalagem, preco_por_unidade) ou None se inválido."""
+        try:
+            paid = parse_number(self.cat_price.get())
+            pack = parse_number(self.cat_pack.get())
+            return paid, pack, unit_price(paid, pack)
+        except ValueError:
+            return None
+
+    def _update_cat_preview(self):
+        r = self._read_catalog_form()
+        unit = self.cat_unit.get().strip() or "un"
+        if r and r[0] > 0:
+            self.cat_preview.config(text=f"Custo por {unit}: {format_unit_money(r[2])}")
+        else:
+            self.cat_preview.config(text="")
+
     def save_catalog_item(self):
         name = self.cat_name.get().strip()
         unit = self.cat_unit.get().strip() or "un"
         if not name:
             return messagebox.showerror("Erro", "Digite o nome do material.")
-        try:
-            price = parse_number(self.cat_price.get())
-        except ValueError:
-            return messagebox.showerror("Erro", "Preço inválido.")
-        if price <= 0:
-            return messagebox.showerror("Erro", "Informe o preço por unidade.")
+        r = self._read_catalog_form()
+        if not r or r[0] <= 0 or r[1] <= 0:
+            return messagebox.showerror("Erro", "Informe o preço pago e a quantidade da embalagem "
+                                        "(números maiores que zero).")
+        paid, pack, per_unit = r
         self.catalog = [m for m in self.catalog if m["nome"].lower() != name.lower()]
-        self.catalog.append({"nome": name, "unidade": unit, "preco": price})
+        self.catalog.append({"nome": name, "unidade": unit, "preco": per_unit,
+                             "preco_pago": paid, "qtd_embalagem": pack})
         save_materials(self.catalog)
         self._refresh_catalog()
         self._clear_catalog_form()
@@ -202,7 +234,10 @@ class App(tk.Tk):
     def _clear_catalog_form(self):
         self.cat_name.delete(0, "end")
         self.cat_price.delete(0, "end")
+        self.cat_pack.delete(0, "end")
+        self.cat_pack.insert(0, "1")
         self.cat_unit.set("un")
+        self.cat_preview.config(text="")
         self.cat_tree.selection_remove(self.cat_tree.selection())
 
     def _fill_catalog_form(self):
@@ -212,8 +247,13 @@ class App(tk.Tk):
             self.cat_name.delete(0, "end")
             self.cat_name.insert(0, m["nome"])
             self.cat_unit.set(m["unidade"])
+            paid = m.get("preco_pago", m["preco"])
+            pack = m.get("qtd_embalagem", 1)
             self.cat_price.delete(0, "end")
-            self.cat_price.insert(0, f"{m['preco']:.2f}".replace(".", ","))
+            self.cat_price.insert(0, f"{paid:.2f}".replace(".", ","))
+            self.cat_pack.delete(0, "end")
+            self.cat_pack.insert(0, f"{pack:g}".replace(".", ","))
+            self._update_cat_preview()
 
     def delete_catalog_item(self):
         sel = self.cat_tree.selection()
@@ -228,8 +268,11 @@ class App(tk.Tk):
         items = sorted(self.catalog, key=lambda m: m["nome"].lower())
         self.cat_tree.delete(*self.cat_tree.get_children())
         for m in items:
+            pack = m.get("qtd_embalagem", 1)
+            paid = m.get("preco_pago", m["preco"])
             self.cat_tree.insert("", "end", iid=m["nome"], values=(
-                m["nome"], m["unidade"], format_money(m["preco"])))
+                m["nome"], f"{format_money(paid)} por {pack:g} {m['unidade']}",
+                f"{format_unit_money(m['preco'])} por {m['unidade']}"))
         self.mat_pick["values"] = [m["nome"] for m in items]
         if self.mat_pick.get() not in self.mat_pick["values"]:
             self.mat_pick.set("")
@@ -240,7 +283,7 @@ class App(tk.Tk):
 
     def _update_unit_label(self):
         m = self._picked()
-        self.mat_unit.config(text=f"{format_money(m['preco'])} por {m['unidade']}" if m
+        self.mat_unit.config(text=f"{format_unit_money(m['preco'])} por {m['unidade']}" if m
                              else "Escolha o material e a quantidade usada")
 
     # ---------- materiais do produto ----------
@@ -269,14 +312,18 @@ class App(tk.Tk):
     def _refresh_materials(self):
         self.mat_list.delete(*self.mat_list.get_children())
         for n, q, u, c in self.materials:
-            self.mat_list.insert("", "end", values=(n, f"{q:g} {u}", format_money(c)))
+            cat = next((m for m in self.catalog if m["nome"] == n), None)
+            pack = cat.get("qtd_embalagem", 1) if cat else 1
+            y = yield_units(pack, q)
+            rende = f"{y} un." if pack > q and y > 0 else "-"
+            self.mat_list.insert("", "end", values=(n, f"{q:g} {u}", rende, format_money(c)))
 
     # ---------- cálculo ----------
     def _read(self):
         try:
             return calculate(
                 [m[3] for m in self.materials],
-                parse_number(self.hours.get()),
+                parse_number(self.minutes.get()),
                 parse_number(self.rate.get()),
                 parse_number(self.extra.get()),
                 parse_number(self.margin.get()),
@@ -291,22 +338,27 @@ class App(tk.Tk):
         if not r:
             return None
         self.result.config(text=format_money(r["price_unit"]))
-        self.detail.config(text=(
-            f"Materiais: {format_money(r['material'])}\n"
-            f"Mão de obra: {format_money(r['labor'])}\n"
-            f"Custos extras: {format_money(r['extras'])}\n"
-            f"Custo total: {format_money(r['cost_total'])}  "
-            f"(cada: {format_money(r['cost_unit'])})\n"
-            f"Lucro total: {format_money(r['profit'])}\n"
-            f"Total do lote ({r['quantity']} un.): {format_money(r['price_total'])}"
-        ))
+        lines = [
+            "Por 1 unidade:",
+            f"  Materiais: {format_money(r['material'])}",
+            f"  Mão de obra: {format_money(r['labor'])}",
+            f"  Custos extras: {format_money(r['extras'])}",
+            f"  Custo: {format_money(r['cost_unit'])}",
+            f"  Lucro: {format_money(r['profit_unit'])}",
+        ]
+        if r["quantity"] > 1:
+            lines += ["", f"Pedido de {r['quantity']} unidades:",
+                      f"  Custo: {format_money(r['cost_total'])}",
+                      f"  Lucro: {format_money(r['profit_total'])}",
+                      f"  Total a cobrar: {format_money(r['price_total'])}"]
+        self.detail.config(text="\n".join(lines))
         return r
 
     def clear(self):
         self.materials = []
         self._refresh_materials()
         self.name.delete(0, "end")
-        for e, v in ((self.hours, "0"), (self.rate, "0"), (self.extra, "0"), (self.margin, "50"), (self.qty, "1")):
+        for e, v in ((self.minutes, "0"), (self.rate, "0"), (self.extra, "0"), (self.margin, "50"), (self.qty, "1")):
             e.delete(0, "end")
             e.insert(0, v)
         self.result.config(text="R$ 0,00")
@@ -323,7 +375,7 @@ class App(tk.Tk):
         item = {
             "nome": name,
             "materiais": self.materials,
-            "horas": self.hours.get(), "hora_valor": self.rate.get(),
+            "minutos": self.minutes.get(), "hora_valor": self.rate.get(),
             "extras": self.extra.get(), "lucro": self.margin.get(), "qtd": self.qty.get(),
             "custo_unit": r["cost_unit"], "preco_unit": r["price_unit"],
         }
@@ -350,7 +402,9 @@ class App(tk.Tk):
         self.name.insert(0, p["nome"])
         self.materials = [tuple(m) for m in p["materiais"]]
         self._refresh_materials()
-        for e, k in ((self.hours, "horas"), (self.rate, "hora_valor"), (self.extra, "extras"),
+        if "minutos" not in p:  # produto salvo em versão antiga (horas)
+            p = dict(p, minutos=f"{parse_number(p.get('horas', '0')) * 60:g}".replace(".", ","))
+        for e, k in ((self.minutes, "minutos"), (self.rate, "hora_valor"), (self.extra, "extras"),
                      (self.margin, "lucro"), (self.qty, "qtd")):
             e.delete(0, "end")
             e.insert(0, p[k])

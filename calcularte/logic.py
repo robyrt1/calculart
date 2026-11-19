@@ -23,32 +23,57 @@ def format_money(value: float) -> str:
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def calculate(materials, hours, hourly_rate, extra_percent, margin_percent, quantity=1):
-    """Retorna dict com custos e preço de venda.
+def unit_price(paid: float, pack_qty: float) -> float:
+    """Preço por unidade de medida: quanto pagou / quanto veio na embalagem."""
+    if pack_qty <= 0:
+        raise ValueError("quantidade da embalagem deve ser maior que zero")
+    return paid / pack_qty
 
-    materials: lista de custos de material (para o lote inteiro)
+
+def format_unit_money(value: float) -> str:
+    """Como format_money, mas com até 4 casas para preços unitários pequenos."""
+    s = f"{value:,.4f}".rstrip("0")
+    if len(s.split(".")[1]) < 2:
+        s = f"{value:,.2f}"
+    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def yield_units(pack_qty: float, qty_used: float) -> int:
+    """Quantas unidades do produto uma embalagem rende (ex.: rolo de 50 m / 0,3 m = 166)."""
+    if qty_used <= 0:
+        return 0
+    return int(pack_qty / qty_used + 1e-9)
+
+
+def calculate(materials, minutes, hourly_rate, extra_percent, margin_percent, quantity=1):
+    """Calcula tudo POR UMA UNIDADE do produto e também o total do pedido.
+
+    materials: custos de material gastos em 1 unidade
+    minutes: minutos de trabalho para fazer 1 unidade
+    hourly_rate: valor da hora de trabalho
     extra_percent: % de custos extras (embalagem, taxas) sobre material + mão de obra
-    margin_percent: % de lucro sobre o custo total
-    quantity: unidades produzidas no lote
+    margin_percent: % de lucro sobre o custo
+    quantity: quantas unidades no pedido (só para o total)
     """
     quantity = max(int(quantity), 1)
-    material_total = sum(materials)
-    labor = hours * hourly_rate
-    base = material_total + labor
+    material = sum(materials)
+    labor = minutes / 60 * hourly_rate
+    base = material + labor
     extras = base * extra_percent / 100
-    cost_total = base + extras
-    profit = cost_total * margin_percent / 100
-    price_total = cost_total + profit
+    cost_unit = base + extras
+    profit_unit = cost_unit * margin_percent / 100
+    price_unit = cost_unit + profit_unit
     return {
-        "material": material_total,
+        "material": material,
         "labor": labor,
         "extras": extras,
-        "cost_total": cost_total,
-        "profit": profit,
-        "price_total": price_total,
-        "cost_unit": cost_total / quantity,
-        "price_unit": price_total / quantity,
+        "cost_unit": cost_unit,
+        "profit_unit": profit_unit,
+        "price_unit": price_unit,
         "quantity": quantity,
+        "cost_total": cost_unit * quantity,
+        "profit_total": profit_unit * quantity,
+        "price_total": price_unit * quantity,
     }
 
 
